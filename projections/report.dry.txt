@@ -1,0 +1,89 @@
+costcut: what three inference-cost levers really save, under a fixed quality gate
+====================================================================================
+*** FAKE BACKEND: every quality number is junk; usd figures are a pessimistic projection ***
+commit 1e77dd3221f724f9615de98eef4a2b69cda00331 (dirty=True)  anthropic-python 2.8.0  2026-11-13T19:47:54+00:00
+data   https://huggingface.co/datasets/hotpotqa/hotpot_qa (distractor, validation)  [CC BY-SA 4.0]  rows 0..29 in published order (n=30); corpus 992 paragraphs
+models large=claude-sonnet-5-5  cheap=claude-haiku-5-5  thinking off on both; effort and sampling at API default
+prices USD per 1M tokens, 2026-11-13, https://platform.claude.com/docs/en/about-claude/pricing
+       claude-sonnet-5-5  in 2.0   write5m 2.5    read 0.1   out 10.0
+       claude-haiku-5-5   in 0.1   write5m 0.125  read 0.01  out 0.5
+
+Noise floor: k=3 baseline reruns, r=1 run per lever
+  metric         gated    mean runs                       sigma     MDE
+  answer_f1      yes     0.142 0.142 0.142 0.142         0.0000  0.0333
+  bundle_recall  yes     0.933 0.933 0.933 0.933         0.0000  0.0333
+  answer_em              0.100 0.100 0.100 0.100         0.0000  0.0333
+  ndcg10                 0.791 0.791 0.791 0.791         0.0000  0.0333
+  cite_recall            0.400 0.400 0.400 0.400         0.0000  0.0333
+  intent_acc             0.967 0.967 0.967 0.967         0.0000  0.0333
+  MDE = max((t_{1-alpha,k-1} + t_{power,k-1}) * sigma_run * sqrt(1/k + 1/r), 1/n); alpha=0.05 one-sided, power=0.80, sigma_run = SD(ddof=1) of the k baseline run means; lever holds on a metric iff (mean baseline - mean lever) <= MDE; passes iff it holds on every gated metric
+
+Cost per question and gate (cost from API usage x price table)
+  config              $/question   saving     F1     dF1 recall    drec nDCG10  gate
+  baseline              0.015131           0.142          0.933          0.791      
+  context_2000          0.012339   -18.5%  0.142  -0.000  0.933  +0.000  0.791  PASS
+  context_1000          0.009747   -35.6%  0.142  -0.000  0.817  -0.117  0.791  FAIL
+  context_500           0.008435   -44.3%  0.142  -0.000  0.767  -0.167  0.791  FAIL
+  routing_upstream      0.011022   -27.2%  0.142  -0.000  0.933  +0.000  0.791  PASS
+  routing_all           0.000757   -95.0%  0.142  -0.000  0.933  +0.000  0.791  PASS
+  caching               0.015131    -0.0%  0.142  -0.000  0.933  +0.000  0.791  PASS
+  combined              0.005638   -62.7%  0.142  -0.000  0.817  -0.117  0.791  FAIL
+  baseline $/question across the k reruns: 0.015131, 0.015131, 0.015131 (sd 0.000000)
+  saving = change in $/question vs the baseline mean; dF1/drec = lever minus baseline mean;
+  gate PASS iff each gated drop <= its MDE (above).
+
+Paired bootstrap 95% CI of the drop (baseline per-question mean over k runs minus lever), context only
+  context_2000       answer_f1 +0.000 [+0.000, +0.000]   bundle_recall +0.000 [+0.000, +0.000]
+  context_1000       answer_f1 +0.000 [+0.000, +0.000]   bundle_recall +0.117 [+0.050, +0.200]
+  context_500        answer_f1 +0.000 [+0.000, +0.000]   bundle_recall +0.167 [+0.083, +0.250]
+  routing_upstream   answer_f1 +0.000 [+0.000, +0.000]   bundle_recall +0.000 [+0.000, +0.000]
+  routing_all        answer_f1 +0.000 [+0.000, +0.000]   bundle_recall +0.000 [+0.000, +0.000]
+  caching            answer_f1 +0.000 [+0.000, +0.000]   bundle_recall +0.000 [+0.000, +0.000]
+  combined           answer_f1 +0.000 [+0.000, +0.000]   bundle_recall +0.117 [+0.050, +0.200]
+
+Where the money goes (per question, per step; tokens from API usage)
+  config/tag             step   model               prompt  read%   out        $/q
+  baseline/b1            intent fake                   770   0.0%    15   0.001690
+  baseline/b1            qgen   fake                   798   0.0%   104   0.002635
+  baseline/b1            synth  fake                  4623   0.0%   156   0.010805
+  baseline/b2            intent fake                   770   0.0%    15   0.001690
+  baseline/b2            qgen   fake                   798   0.0%   104   0.002635
+  baseline/b2            synth  fake                  4623   0.0%   156   0.010805
+  baseline/b3            intent fake                   770   0.0%    15   0.001690
+  baseline/b3            qgen   fake                   798   0.0%   104   0.002635
+  baseline/b3            synth  fake                  4623   0.0%   156   0.010805
+  context_2000/L1        intent fake                   770   0.0%    15   0.001690
+  context_2000/L1        qgen   fake                   798   0.0%   104   0.002635
+  context_2000/L1        synth  fake                  3227   0.0%   156   0.008013
+  context_1000/L1        intent fake                   770   0.0%    15   0.001690
+  context_1000/L1        qgen   fake                   798   0.0%   104   0.002635
+  context_1000/L1        synth  fake                  1931   0.0%   156   0.005422
+  context_500/L1         intent fake                   770   0.0%    15   0.001690
+  context_500/L1         qgen   fake                   798   0.0%   104   0.002635
+  context_500/L1         synth  fake                  1275   0.0%   156   0.004109
+  routing_upstream/L1    intent fake                   770   0.0%    15   0.000085
+  routing_upstream/L1    qgen   fake                   798   0.0%   104   0.000132
+  routing_upstream/L1    synth  fake                  4623   0.0%   156   0.010805
+  routing_all/L1         intent fake                   770   0.0%    15   0.000085
+  routing_all/L1         qgen   fake                   798   0.0%   104   0.000132
+  routing_all/L1         synth  fake                  4623   0.0%   156   0.000540
+  caching/L1             intent fake                   770   0.0%    15   0.001690
+  caching/L1             qgen   fake                   798   0.0%   104   0.002635
+  caching/L1             synth  fake                  4623   0.0%   156   0.010805
+  combined/L1            intent fake                   770   0.0%    15   0.000085
+  combined/L1            qgen   fake                   798   0.0%   104   0.000132
+  combined/L1            synth  fake                  1931   0.0%   156   0.005422
+
+Context bundle per run
+  baseline/b1            docs  19.9  est tokens   2983  dupes dropped   0  truncated   0  parse fails qgen 0 synth 0
+  baseline/b2            docs  19.9  est tokens   2983  dupes dropped   0  truncated   0  parse fails qgen 0 synth 0
+  baseline/b3            docs  19.9  est tokens   2983  dupes dropped   0  truncated   0  parse fails qgen 0 synth 0
+  context_2000/L1        docs  15.1  est tokens   1915  dupes dropped   1  truncated  70  parse fails qgen 0 synth 0
+  context_1000/L1        docs   7.9  est tokens    925  dupes dropped   0  truncated  32  parse fails qgen 0 synth 0
+  context_500/L1         docs   4.1  est tokens    424  dupes dropped   0  truncated   9  parse fails qgen 0 synth 0
+  routing_upstream/L1    docs  19.9  est tokens   2983  dupes dropped   0  truncated   0  parse fails qgen 0 synth 0
+  routing_all/L1         docs  19.9  est tokens   2983  dupes dropped   0  truncated   0  parse fails qgen 0 synth 0
+  caching/L1             docs  19.9  est tokens   2983  dupes dropped   0  truncated   0  parse fails qgen 0 synth 0
+  combined/L1            docs   7.9  est tokens    925  dupes dropped   0  truncated  32  parse fails qgen 0 synth 0
+
+Projected spend if run for real: $2.9878 (720 calls; reused 180); cap $None

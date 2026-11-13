@@ -8,7 +8,36 @@ then all three run together. Cost comes from the API's own `usage` fields times 
 price table. Quality is checked against a gate written down below **before any lever ran**.
 Whatever comes out is the result. Nothing was tuned to reach a target saving.
 
-> Results: see [Results](#results) (filled in from `results.json` after the real run) and `report.txt`.
+> **Status (2026-11-14): the real run has not been done.** No savings or quality numbers have been
+> measured yet. The section [Projections](#projections-not-results) gives dry-run cost estimates. They are
+> not results, and the pass/fail column stays empty until `python -m costcut run` has run for real.
+
+## Projections (not results)
+
+From `python -m costcut run --dry-run` (fake backend, no API calls, n=30): token counts are estimated as
+chars/4 x 1.3 and outputs are fixed guesses (intent 12, query 80, answer 120 tokens), at the real prices
+below. The fake backend does not simulate prompt caching, so its caching saving shows as 0. Quality on the
+fake backend is meaningless, so there is no gate verdict. Full output: `projections/report.dry.txt`.
+
+| config | projected $/question | projected change vs baseline | gate |
+|---|---|---|---|
+| baseline | 0.0151 | | not run |
+| context_2000 | 0.0123 | -18.5% | not run |
+| context_1000 | 0.0097 | -35.6% | not run |
+| context_500 | 0.0084 | -44.3% | not run |
+| routing_upstream | 0.0110 | -27.2% | not run |
+| routing_all | 0.0008 | -95.0% | not run |
+| caching | not projected (fake has no cache) | | not run |
+| combined | 0.0056 excluding caching | -62.7% excluding caching | not run |
+
+In the projected baseline, synthesis is ~71% of the cost (≈4.6k prompt tokens on the large tier).
+Intent and query generation are ~800 prompt tokens each.
+
+Real measurements so far (2026-11-13): the stable prefixes are 790 / 866 / 841 tokens
+(intent / query / synthesis, `count_tokens`, both models), above the 512-token caching minimum. chars/4
+undercounts these prompts by about 40%, so the projections are rough. A two-call smoke test confirmed both
+model IDs and the thinking-off settings ($0.00012, in `runs/ledger.jsonl`). Projected total for the full
+run: $2.99 (estimate); hard cap $3.50.
 
 ## Pipeline under test
 
@@ -122,13 +151,13 @@ per-source cap, the 20 candidates, the combined configuration, the models, think
 pip install -e .[dev]
 python -m pytest                     # cost math, gate logic, bundle, metrics
 python -m costcut run --dry-run      # offline fake backend: plumbing check + projected spend
-python -m costcut run                # the real run (reads ANTHROPIC_API_KEY from the environment)
+python -m costcut run                # the real run (ANTHROPIC_API_KEY from the environment, or --env-file PATH)
 ```
 
 `python -m costcut run` is also the one-command rerun. Every API response is stored in `runs/cache/`, keyed
 by the full request plus a replicate tag, so with the committed cache a rerun reproduces `results.json`
 exactly at $0. `--no-cache` makes a fresh, independent run (and real spend). The spend cap
-(`--max-usd`, default 2.80) is checked against `runs/ledger.jsonl`, which records every real API call ever
+(`--max-usd`, default 3.50) is checked against `runs/ledger.jsonl`, which records every real API call ever
 made by this experiment, so aborted attempts count too.
 
 ## Limits

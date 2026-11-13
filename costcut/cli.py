@@ -19,7 +19,18 @@ ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_N = 30
 DEFAULT_K = 3
-DEFAULT_MAX_USD = 2.80  # hard cap on the ledger total; the task's budget is $3
+DEFAULT_MAX_USD = 3.50  # hard cap on the ledger total (raised from 2.80 with Arun's OK, 2026-11-13)
+
+
+def load_key(path: Path) -> None:
+    """Set ANTHROPIC_API_KEY from a KEY=VALUE file, unless the environment already has it.
+    Reads only that one key. The value is never printed, logged, cached or written anywhere."""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        k, sep, v = line.partition("=")
+        if sep and k.strip() == "ANTHROPIC_API_KEY":
+            os.environ.setdefault("ANTHROPIC_API_KEY", v.strip().strip('"').strip("'"))
+            return
+    raise SystemExit(f"no ANTHROPIC_API_KEY line in {path}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,8 +46,15 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--no-cache", action="store_true")
     r.add_argument("--out", type=Path, default=None)
     sub.add_parser("report")
-    sub.add_parser("smoke")
+    sm = sub.add_parser("smoke")
+    tk = sub.add_parser("tokens", help="count each stable prefix with the free count_tokens endpoint")
+    for p_ in (r, sm, tk):
+        p_.add_argument("--env-file", type=Path, default=None,
+                        help="read ANTHROPIC_API_KEY (only that key) from this KEY=VALUE file into the "
+                             "process environment; nothing is copied, printed or logged")
     a = ap.parse_args(argv)
+    if getattr(a, "env_file", None):
+        load_key(a.env_file)
 
     if a.cmd == "report":
         from .report import render
@@ -45,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         print(render(res))
         return 0
 
-    if a.cmd == "smoke" or (a.cmd == "run" and not a.dry_run):
+    if a.cmd in ("smoke", "tokens") or (a.cmd == "run" and not a.dry_run):
         if not (os.environ.get("ANTHROPIC_API_KEY")):
             ap.error("ANTHROPIC_API_KEY is not set in the environment (or use --dry-run)")
 
@@ -57,6 +75,18 @@ def main(argv: list[str] | None = None) -> int:
             resp = llm.call(step="intent", model=model, system_blocks=[{"type": "text", "text": "Reply with OK."}],
                             user="ping", max_tokens=8, tag="smoke")
             print(model, "->", resp.model, repr(resp.text), resp.usage.to_dict(), f"${resp.cost:.6f}")
+        return 0
+
+    if a.cmd == "tokens":
+        import anthropic
+        from . import prompts as P
+        from .pricing import BIG, SMALL
+        c = anthropic.Anthropic(base_url="https://api.anthropic.com", api_key=os.environ["ANTHROPIC_API_KEY"])
+        for model in (BIG, SMALL):
+            for name in ("INTENT_SYSTEM", "QGEN_SYSTEM", "SYNTH_SYSTEM"):
+                t = c.messages.count_tokens(model=model, system=getattr(P, name),
+                                            messages=[{"role": "user", "content": "x"}]).input_tokens
+                print(f"{model:18s} {name:14s} {t} tokens (system + 1-char user message)")
         return 0
 
     if a.k < 3:

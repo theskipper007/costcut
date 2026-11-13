@@ -1,0 +1,21 @@
+[project]
+name = "costcut"
+version = "0.1.0"
+description = "Measure what three LLM inference-cost levers really save while a fixed quality gate holds."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["anthropic>=2.8", "scipy>=1.10"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["costcut"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
